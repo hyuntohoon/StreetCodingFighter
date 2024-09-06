@@ -1,1 +1,310 @@
-test
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scf-system
+
+---
+# ConfigMap for environment variables
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scf-config
+  namespace: scf-system
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  SPRING_KAFKA_PRODUCER_KEY_SERIALIZER: "org.apache.kafka.common.serialization.StringSerializer"
+  SPRING_KAFKA_PRODUCER_VALUE_SERIALIZER: "org.springframework.kafka.support.serializer.JsonSerializer"
+  SPRING_KAFKA_PRODUCER_PROPERTIES_ACKS: "all"
+  SPRING_KAFKA_PRODUCER_PROPERTIES_RETRIES: "3"
+  SPRING_KAFKA_PRODUCER_PROPERTIES_COMPRESSION_TYPE: "gzip"
+  SPRING_KAFKA_PRODUCER_PROPERTIES_BATCH_SIZE: "16384"
+  SPRING_KAFKA_PRODUCER_PROPERTIES_LINGER_MS: "1"
+  LOGGING_LEVEL_ORG_HIBERNATE_SQL: "debug"
+  SERVER_ERROR_INCLUDE_MESSAGE: "always"
+  SERVER_ERROR_INCLUDE_BINDING_ERRORS: "always"
+
+---
+# Secret for sensitive information
+apiVersion: v1
+kind: Secret
+metadata:
+  name: scf-secrets
+  namespace: scf-system
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: rootpassword
+  MYSQL_PASSWORD: password
+  JWT_SECRET: 7d1b1d6d36d8e6a8f1bda6a7f473f87b012b0345a1b5f
+
+---
+# PersistentVolumeClaim for MariaDB and Redis
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-user-data
+  namespace: scf-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-problem-data
+  namespace: scf-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-edu-data
+  namespace: scf-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: scf-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Deployment and Service for Zookeeper
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+      - name: zookeeper
+        image: confluentinc/cp-zookeeper:latest
+        env:
+        - name: ZOOKEEPER_CLIENT_PORT
+          value: "2181"
+        - name: ZOOKEEPER_TICK_TIME
+          value: "2000"
+        ports:
+        - containerPort: 2181
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  namespace: scf-system
+spec:
+  selector:
+    app: zookeeper
+  ports:
+    - port: 2181
+      targetPort: 2181
+
+---
+# Deployment and Service for Kafka
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:latest
+        env:
+        - name: KAFKA_BROKER_ID
+          value: "1"
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: "zookeeper:2181"
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://kafka:9092"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        ports:
+        - containerPort: 9092
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: scf-system
+spec:
+  selector:
+    app: kafka
+  ports:
+    - port: 9092
+      targetPort: 9092
+
+---
+# Deployment and Service for MariaDB (User)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb-user
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb-user
+  template:
+    metadata:
+      labels:
+        app: mariadb-user
+    spec:
+      containers:
+      - name: mariadb-user
+        image: mariadb:latest
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          value: "member_db"
+        - name: MYSQL_USER
+          value: "user"
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_PASSWORD
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mariadb-user-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mariadb-user-storage
+        persistentVolumeClaim:
+          claimName: mariadb-user-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-user
+  namespace: scf-system
+spec:
+  selector:
+    app: mariadb-user
+  ports:
+    - port: 3306
+      targetPort: 3306
+
+# Similar Deployments and Services should be created for:
+# - mariadb-problem
+# - mariadb-edu
+# - redis-user
+# - user-server
+# - problem-server
+# - multi-server
+# - rank-server
+# - battle-server
+# - chat-server
+# - single-server
+
+# I'll provide one more example for the user-server:
+
+---
+# Deployment and Service for User Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-server
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-server
+  template:
+    metadata:
+      labels:
+        app: user-server
+    spec:
+      containers:
+      - name: user-server
+        image: zlxldgus123/user
+        env:
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:mariadb://mariadb-user:3306/member_db?characterEncoding=utf8mb4"
+        - name: SPRING_DATASOURCE_USERNAME
+          value: "user"
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_PASSWORD
+        - name: SPRING_DATA_REDIS_HOST
+          value: "redis-user"
+        - name: SPRING_DATA_REDIS_PORT
+          value: "6379"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: JWT_SECRET
+        - name: JWT_ACCESS_TOKEN_EXPIRY
+          value: "3600000"
+        - name: JWT_REFRESH_TOKEN_EXPIRY
+          value: "86400000"
+        envFrom:
+        - configMapRef:
+            name: scf-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-server
+  namespace: scf-system
+spec:
+  selector:
+    app: user-server
+  ports:
+    - port: 80
+      targetPort: 8080
