@@ -39,7 +39,7 @@ stringData:
   JWT_SECRET: 7d1b1d6d36d8e6a8f1bda6a7f473f87b012b0345a1b5f
 
 ---
-# PersistentVolumeClaim for MariaDB and Redis
+# PersistentVolumeClaims
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -133,7 +133,7 @@ spec:
       targetPort: 2181
 
 ---
-# Deployment and Service for Kafka
+# Deployment and Service for Kafka (Updated)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -159,6 +159,10 @@ spec:
           value: "zookeeper:2181"
         - name: KAFKA_ADVERTISED_LISTENERS
           value: "PLAINTEXT://kafka:9092"
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "PLAINTEXT:PLAINTEXT"
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: "PLAINTEXT"
         - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
           value: "1"
         ports:
@@ -235,19 +239,164 @@ spec:
     - port: 3306
       targetPort: 3306
 
-# Similar Deployments and Services should be created for:
-# - mariadb-problem
-# - mariadb-edu
-# - redis-user
-# - user-server
-# - problem-server
-# - multi-server
-# - rank-server
-# - battle-server
-# - chat-server
-# - single-server
+---
+# Deployment and Service for MariaDB (Problem)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb-problem
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb-problem
+  template:
+    metadata:
+      labels:
+        app: mariadb-problem
+    spec:
+      containers:
+      - name: mariadb-problem
+        image: mariadb:latest
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          value: "problem_db"
+        - name: MYSQL_USER
+          value: "user"
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_PASSWORD
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mariadb-problem-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mariadb-problem-storage
+        persistentVolumeClaim:
+          claimName: mariadb-problem-data
 
-# I'll provide one more example for the user-server:
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-problem
+  namespace: scf-system
+spec:
+  selector:
+    app: mariadb-problem
+  ports:
+    - port: 3306
+      targetPort: 3306
+
+---
+# Deployment and Service for MariaDB (Edu)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb-edu
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb-edu
+  template:
+    metadata:
+      labels:
+        app: mariadb-edu
+    spec:
+      containers:
+      - name: mariadb-edu
+        image: mariadb:latest
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          value: "edu_db"
+        - name: MYSQL_USER
+          value: "user"
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_PASSWORD
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mariadb-edu-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mariadb-edu-storage
+        persistentVolumeClaim:
+          claimName: mariadb-edu-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-edu
+  namespace: scf-system
+spec:
+  selector:
+    app: mariadb-edu
+  ports:
+    - port: 3306
+      targetPort: 3306
+
+---
+# Deployment and Service for Redis
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-user
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-user
+  template:
+    metadata:
+      labels:
+        app: redis-user
+    spec:
+      containers:
+      - name: redis-user
+        image: redis:latest
+        ports:
+        - containerPort: 6379
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-user
+  namespace: scf-system
+spec:
+  selector:
+    app: redis-user
+  ports:
+    - port: 6379
+      targetPort: 6379
 
 ---
 # Deployment and Service for User Server
@@ -308,3 +457,288 @@ spec:
   ports:
     - port: 80
       targetPort: 8080
+
+---
+# Deployment and Service for Problem Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: problem-server
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: problem-server
+  template:
+    metadata:
+      labels:
+        app: problem-server
+    spec:
+      containers:
+      - name: problem-server
+        image: zlxldgus123/problem
+        env:
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:mariadb://mariadb-problem:3306/problem_db?characterEncoding=utf8mb4"
+        - name: SPRING_DATASOURCE_USERNAME
+          value: "user"
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_PASSWORD
+        envFrom:
+        - configMapRef:
+            name: scf-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: problem-server
+  namespace: scf-system
+spec:
+  selector:
+    app: problem-server
+  ports:
+    - port: 80
+      targetPort: 8080
+
+---
+# Deployment and Service for Multi Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multi-server
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: multi-server
+  template:
+    metadata:
+      labels:
+        app: multi-server
+    spec:
+      containers:
+      - name: multi-server
+        image: zlxldgus123/multi
+        envFrom:
+        - configMapRef:
+            name: scf-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multi-server
+  namespace: scf-system
+spec:
+  selector:
+    app: multi-server
+  ports:
+    - port: 80
+      targetPort: 8080
+
+---
+# Deployment and Service for Rank Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rank-server
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rank-server
+  template:
+    metadata:
+      labels:
+        app: rank-server
+    spec:
+      containers:
+      - name: rank-server
+        image: zlxldgus123/rank
+        envFrom:
+        - configMapRef:
+            name: scf-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rank-server
+  namespace: scf-system
+spec:
+  selector:
+    app: rank-server
+  ports:
+    - port: 80
+      targetPort: 8080
+
+---
+# Deployment and Service for Battle Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: battle-server
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: battle-server
+  template:
+    metadata:
+      labels:
+        app: battle-server
+    spec:
+      containers:
+      - name: battle-server
+        image: zlxldgus123/battle
+        envFrom:
+        - configMapRef:
+            name: scf-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: battle-server
+  namespace: scf-system
+spec:
+  selector:
+    app: battle-server
+  ports:
+    - port: 80
+      targetPort: 8080
+
+---
+# Deployment and Service for Chat Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-server
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-server
+  template:
+    metadata:
+      labels:
+        app: chat-server
+    spec:
+      containers:
+      - name: chat-server
+        image: zlxldgus123/chat
+        env:
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:mariadb://mariadb-user:3306/member_db?characterEncoding=utf8mb4"
+        - name: SPRING_DATASOURCE_USERNAME
+          value: "user"
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_PASSWORD
+        envFrom:
+        - configMapRef:
+            name: scf-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-server
+  namespace: scf-system
+spec:
+  selector:
+    app: chat-server
+  ports:
+    - port: 80
+      targetPort: 8080
+
+---
+# Deployment and Service for Single Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: single-server
+  namespace: scf-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: single-server
+  template:
+    metadata:
+      labels:
+        app: single-server
+    spec:
+      containers:
+      - name: single-server
+        image: zlxldgus123/single
+        env:
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:mariadb://mariadb-edu:3306/edu_db?characterEncoding=utf8mb4"
+        - name: SPRING_DATASOURCE_USERNAME
+          value: "user"
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scf-secrets
+              key: MYSQL_PASSWORD
+        envFrom:
+        - configMapRef:
+            name: scf-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: single-server
+  namespace: scf-system
+spec:
+  selector:
+    app: single-server
+  ports:
+    - port: 80
+      targetPort: 8080
+
+# You might want to add an Ingress resource here if you need external access to your services.
+# For example:
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: scf-ingress
+  namespace: scf-system
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    # Add other annotations as needed
+spec:
+  rules:
+  - host: your-domain.com  # Replace with your actual domain
+    http:
+      paths:
+      - path: /user
+        pathType: Prefix
+        backend:
+          service:
+            name: user-server
+            port: 
+              number: 80
+      - path: /problem
+        pathType: Prefix
+        backend:
+          service:
+            name: problem-server
+            port: 
+              number: 80
+      # Add more paths for other services as needed
